@@ -1,5 +1,5 @@
-'use client'
 // @ts-nocheck
+'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
@@ -28,7 +28,8 @@ import {
   Heart,
   Zap,
   Shield,
-  BarChart3
+  BarChart3,
+  Sparkles
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -99,11 +100,11 @@ const getOverallSummary = (predictions, locale) => {
   if (predictions.extraversion > 0.6) traits.push(labels.extraversion.summaryLabel)
   if (predictions.agreeableness > 0.6) traits.push(labels.agreeableness.summaryLabel)
   if (predictions.neuroticism > 0.6) traits.push(labels.neuroticism.summaryLabel)
-  
+
   if (traits.length === 0) {
     return summary.balanced
   }
-  
+
   return `${summary.intro}${traits.join(', ')}${summary.outro}`
 }
 
@@ -243,6 +244,22 @@ export default function DemoPage() {
     fetchBaselines()
   }, [])
 
+  // Reset results when model changes
+  useEffect(() => {
+    setPredictions(null)
+    setRawResponse(null)
+    setStatus('idle')
+  }, [modelType, baselineKey])
+
+  // Hide results when audio cleared
+  useEffect(() => {
+    if (!audioFile) {
+      setPredictions(null)
+      setRawResponse(null)
+      setStatus('idle')
+    }
+  }, [audioFile])
+
   // Load results from URL params on mount
   useEffect(() => {
     const resultsParam = searchParams.get('results')
@@ -370,7 +387,7 @@ export default function DemoPage() {
   const processAudio = async (blob) => {
     try {
       const duration = await getAudioDuration(blob)
-      
+
       if (duration < TARGET_DURATION - 0.5) {
         setAudioError(t.errors.duration(duration.toFixed(1)))
         return
@@ -528,7 +545,7 @@ export default function DemoPage() {
   })) : []
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/40">
       {/* Header */}
       <header className="border-b border-border/40 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -551,409 +568,425 @@ export default function DemoPage() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Title */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">{t.title}</h1>
-            <p className="text-muted-foreground">{t.subtitle}</p>
-          </div>
-
-          {/* Privacy Note */}
-          <div className="flex items-center gap-2 justify-center mb-8 text-sm text-muted-foreground">
-            <Shield className="w-4 h-4" />
-            <span>{t.privacy}</span>
-          </div>
-
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Left Panel - Audio Capture */}
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Mic className="w-5 h-5" />
-                    {t.audioCardTitle}
-                  </CardTitle>
-                  <CardDescription>{t.audioCardDesc}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Recording Controls */}
-                  <div className="space-y-4">
-                    {isRecording ? (
-                      <div className="text-center space-y-4">
-                        <div className="w-24 h-24 mx-auto rounded-full bg-red-500/20 flex items-center justify-center animate-pulse">
-                          <div className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center">
-                            <Mic className="w-8 h-8 text-white" />
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-2xl font-mono font-bold">{recordingTime.toFixed(1)}s</p>
-                          <p className="text-sm text-muted-foreground">{t.recordingLabel}</p>
-                        </div>
-                        <Progress value={(recordingTime / TARGET_DURATION) * 100} className="h-2" />
-                        <Button variant="destructive" onClick={stopRecording}>
-                          <Square className="w-4 h-4 mr-2" />
-                          {t.stopRecording}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-4 justify-center">
-
-                        <div
-                          className={`relative flex-1 rounded-lg border-2 border-dashed transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/60'
-                            } ${audioFile ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-                          onDragOver={handleDragOver}
-                          onDragEnter={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
-                        >
-                          <input
-                            type="file"
-                            accept="audio/*"
-                            onChange={handleFileUpload}
-                            ref={fileInputRef}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            disabled={!!audioFile}
-                          />
-                          <div className="flex flex-col items-center justify-center gap-2 py-4 px-3 text-center pointer-events-none">
-                            <Upload className="w-5 h-5 text-muted-foreground" />
-                            <div className="text-sm font-medium">{t.dragDropTitle}</div>
-                            <div className="text-xs text-muted-foreground">{t.dragDropSubtitle}</div>
-                          </div>
-                        </div>
-                        <Button
-                          size="lg"
-                          onClick={startRecording}
-                          disabled={!!audioFile}
-                          className="flex-1 p-4"
-                        >
-                          <Mic className="w-5 h-5 " />
-                          {t.recordButton}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Duration requirement */}
-                  <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground">
-                    <Clock className="w-4 h-4" />
-                    <span>{t.durationRequirement}</span>
-                  </div>
-
-                  {/* Error message */}
-                  {audioError && (
-                    <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>{audioError}</span>
-                    </div>
-                  )}
-
-                  {/* Audio Preview */}
-                  {audioUrl && (
-                    <div className="space-y-3 p-4 rounded-lg bg-muted/50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Volume2 className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">{t.audioReady}</span>
-                          <span className="text-xs text-muted-foreground">({audioDuration.toFixed(1)}s)</span>
-                        </div>
-                        <Button variant="ghost" size="sm" onClick={clearAudio}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      <audio
-                        ref={audioRef}
-                        src={audioUrl}
-                        onEnded={() => setIsPlaying(false)}
-                        className="hidden"
-                      />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={togglePlayback}
-                        className="w-full"
-                      >
-                        {isPlaying ? (
-                          <><Pause className="w-4 h-4 mr-2" /> {t.pause}</>
-                        ) : (
-                          <><Play className="w-4 h-4 mr-2" /> {t.play}</>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Model Selection */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Brain className="w-5 h-5" />
-                    {t.modelCardTitle}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>{t.modelTypeLabel}</Label>
-                    <Select value={modelType} onValueChange={setModelType}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="wavlm_ft">
-                          {t.modelOptionWavlm}
-                        </SelectItem>
-                        <SelectItem value="baseline">
-                          {t.modelOptionBaseline}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {modelType === 'baseline' && (
-                    <div className="space-y-2">
-                      <Label>{t.baselineLabel}</Label>
-                      <Select
-                        value={baselineKey}
-                        onValueChange={setBaselineKey}
-                        disabled={baselinesLoading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={baselinesLoading ? t.baselineLoading : t.baselinePlaceholder} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {baselines.map((b) => (
-                            <SelectItem key={b} value={b}>
-                              {b}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {baselinesError && (
-                        <p className="text-xs text-yellow-500">{baselinesError || t.baselineError}</p>
-                      )}
-                    </div>
-                  )}
-
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    onClick={runPrediction}
-                    disabled={!audioFile || status === 'uploading' || status === 'inferring'}
-                  >
-                    {status === 'uploading' && (
-                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t.statusUploading}</>
-                    )}
-                    {status === 'inferring' && (
-                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t.statusInferring}</>
-                    )}
-                    {(status === 'idle' || status === 'done' || status === 'error') && (
-                      <><Brain className="w-5 h-5 mr-2" /> {t.predict}</>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
+      <main>
+        <div className="container mx-auto px-6 md:px-8 py-14">
+          <div className="max-w-6xl mx-auto space-y-12">
+            {/* Title */}
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="inline-flex items-center gap-2 rounded-full px-4 py-2 bg-primary/10 text-primary">
+                <Sparkles className="w-4 h-4" />
+                <span className="text-sm font-medium">{common.brand}</span>
+              </div>
+              <h1 className="text-3xl md:text-4xl font-bold">{t.title}</h1>
+              <p className="text-muted-foreground max-w-2xl">{t.subtitle}</p>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/60 px-3 py-1.5 rounded-full">
+                <Shield className="w-4 h-4" />
+                <span>{t.privacy}</span>
+              </div>
             </div>
 
-            {/* Right Panel - Results */}
-            <div className="space-y-6">
-              {/* Status Banner */}
-              {status !== 'idle' && status !== 'done' && (
-                <Card className={status === 'error' ? 'border-destructive' : 'border-primary'}>
-                  <CardContent className="flex items-center gap-3 p-4">
-                    {status === 'uploading' && (
-                      <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>{t.statusUploadNote}</span></>
-                    )}
-                    {status === 'inferring' && (
-                      <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>{t.statusInferenceNote}</span></>
-                    )}
-                    {status === 'error' && (
-                      <><AlertCircle className="w-5 h-5 text-destructive" /><span className="text-destructive">{predictionError}</span></>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10 items-start">
+              {/* Left Panel - Audio Capture & Model */}
+              <div className="flex flex-col gap-8 w-full col-span-1">
+                <Card className="shadow-md border-border/60">
+                  <CardHeader className="pb-2 px-6 pt-6">
+                    <CardTitle className="flex items-center gap-2">
+                      <Mic className="w-5 h-5" />
+                      {t.audioCardTitle}
+                    </CardTitle>
+                    <CardDescription>{t.audioCardDesc}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6 px-6 pb-6">
+                    {/* Recording Controls */}
+                    <div className="space-y-4">
+                      {isRecording ? (
+                        <div className="text-center space-y-4">
+                          <div className="w-24 h-24 mx-auto rounded-full bg-red-500/20 flex items-center justify-center animate-pulse">
+                            <div className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center">
+                              <Mic className="w-8 h-8 text-white" />
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-mono font-bold">{recordingTime.toFixed(1)}s</p>
+                            <p className="text-sm text-muted-foreground">{t.recordingLabel}</p>
+                          </div>
+                          <Progress value={(recordingTime / TARGET_DURATION) * 100} className="h-2" />
+                          <Button variant="destructive" onClick={stopRecording}>
+                            <Square className="w-4 h-4 mr-2" />
+                            {t.stopRecording}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-4 justify-center">
 
-              {/* Results */}
-              {predictions && status === 'done' && (
-                <>
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2">
-                          <CheckCircle className="w-5 h-5 text-green-500" />
-                          {t.resultsTitle}
-                        </CardTitle>
-                        <Button variant="outline" size="sm" onClick={copyShareableLink}>
-                          {copySuccess ? (
-                            <><CheckCircle className="w-4 h-4 mr-2" /> {t.copied}</>
+                          <div
+                            className={`relative flex-1 rounded-lg border-2 border-dashed transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/60'
+                              } ${audioFile ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                            onDragOver={handleDragOver}
+                            onDragEnter={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                          >
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              onChange={handleFileUpload}
+                              ref={fileInputRef}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              disabled={!!audioFile}
+                            />
+                            <div className="flex flex-col items-center justify-center gap-2 py-4 px-3 text-center pointer-events-none">
+                              <Upload className="w-5 h-5 text-muted-foreground" />
+                              <div className="text-sm font-medium">{t.dragDropTitle}</div>
+                              <div className="text-xs text-muted-foreground">{t.dragDropSubtitle}</div>
+                            </div>
+                          </div>
+                          <Button
+                            size="lg"
+                            onClick={startRecording}
+                            disabled={!!audioFile}
+                            className="flex-1 p-4"
+                          >
+                            <Mic className="w-5 h-5 " />
+                            {t.recordButton}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Duration requirement */}
+                    <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground">
+                      <Clock className="w-4 h-4" />
+                      <span>{t.durationRequirement}</span>
+                    </div>
+
+                    {/* Error message */}
+                    {audioError && (
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{audioError}</span>
+                      </div>
+                    )}
+
+                    {/* Audio Preview */}
+                    {audioUrl && (
+                      <div className="space-y-3 p-4 rounded-lg bg-muted/50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Volume2 className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">{t.audioReady}</span>
+                            <span className="text-xs text-muted-foreground">({audioDuration.toFixed(1)}s)</span>
+                          </div>
+                          <Button variant="ghost" size="sm" onClick={clearAudio}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <audio
+                          ref={audioRef}
+                          src={audioUrl}
+                          onEnded={() => setIsPlaying(false)}
+                          className="hidden"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={togglePlayback}
+                          className="w-full"
+                        >
+                          {isPlaying ? (
+                            <><Pause className="w-4 h-4 mr-2" /> {t.pause}</>
                           ) : (
-                            <><Share2 className="w-4 h-4 mr-2" /> {t.share}</>
+                            <><Play className="w-4 h-4 mr-2" /> {t.play}</>
                           )}
                         </Button>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      {/* Chart */}
-                      <div className="h-64 mb-6">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={chartData} layout="vertical">
-                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                            <XAxis
-                              type="number"
-                              domain={[0, 1]}
-                              tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                              stroke="hsl(var(--muted-foreground))"
-                            />
-                            <YAxis
-                              type="category"
-                              dataKey="trait"
-                              width={30}
-                              stroke="hsl(var(--muted-foreground))"
-                            />
-                            <Tooltip
-                              formatter={(value) => [`${(value * 100).toFixed(1)}%`, 'Score']}
-                              labelFormatter={(label) => chartData.find(d => d.trait === label)?.name || label}
-                              contentStyle={{
-                                backgroundColor: 'hsl(var(--card))',
-                                border: '1px solid hsl(var(--border))',
-                                borderRadius: '8px'
-                              }}
-                            />
-                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                              {chartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.fill} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      {/* Trait Descriptions */}
-                      <div className="space-y-3">
-                        {Object.entries(predictions).map(([key, value]) => {
-                          const info = traitInfo[key]
-                          if (!info) return null
-                          const Icon = info.icon
-                          return (
-                            <div key={key} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
-                              <div
-                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                                style={{ backgroundColor: `${info.color}20` }}
-                              >
-                                <Icon className="w-4 h-4" style={{ color: info.color }} />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-medium">{info.name}</span>
-                                  <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
-                                    {(value * 100).toFixed(0)}%
-                                  </span>
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {getTraitDescription(key, value, traitInfo)}
-                                </p>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Overall Summary */}
-                      <div className="mt-6 p-4 rounded-lg bg-primary/10 border border-primary/20">
-                        <div className="flex items-start gap-3">
-                          <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-medium mb-1">{t.traitOverallHeading}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {getOverallSummary(predictions, locale)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Technical Details */}
-                  <Collapsible open={technicalOpen} onOpenChange={setTechnicalOpen}>
-                    <Card>
-                      <CollapsibleTrigger asChild>
-                        <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors">
-                          <CardTitle className="flex items-center justify-between text-base">
-                            <span>{t.technicalDetails}</span>
-                            {technicalOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </CardTitle>
-                        </CardHeader>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <CardContent className="space-y-3 text-sm">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-muted-foreground">{t.model}</p>
-                              <p className="font-mono">{modelType === 'wavlm_ft' ? t.modelOptionWavlm : t.modelOptionBaseline}</p>
-                            </div>
-                            {modelType === 'baseline' && (
-                              <div>
-                                <p className="text-muted-foreground">{t.baselineKey}</p>
-                                <p className="font-mono">{baselineKey}</p>
-                              </div>
-                            )}
-                            <div>
-                              <p className="text-muted-foreground">{t.latency}</p>
-                              <p className="font-mono">{responseLatency ? `${responseLatency}ms` : 'N/A'}</p>
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground mb-2">{t.rawResponse}</p>
-                            <pre className="p-3 rounded-lg bg-muted overflow-auto text-xs max-h-48">
-                              {JSON.stringify(rawResponse, null, 2)}
-                            </pre>
-                          </div>
-                        </CardContent>
-                      </CollapsibleContent>
-                    </Card>
-                  </Collapsible>
-                </>
-              )}
-
-              {/* Empty State */}
-              {!predictions && status === 'idle' && (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                      <BarChart3 className="w-8 h-8 text-muted-foreground" />
-                    </div>
-                    <h3 className="font-semibold mb-2">{t.emptyStateTitle}</h3>
-                    <p className="text-sm text-muted-foreground max-w-xs">
-                      {t.emptyStateSubtitle}
-                    </p>
+                    )}
                   </CardContent>
                 </Card>
-              )}
 
-              {/* Big Five Quick Reference */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">{t.aboutTitle}</CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground space-y-2">
-                  {t.aboutItems.map((item) => {
-                    const [abbr, rest] = item.split(' - ')
-                    return (
-                      <p key={item}><strong>{abbr[0]}</strong>{abbr.slice(1)} - {rest}</p>
-                    )
-                  })}
-                </CardContent>
-              </Card>
+                {/* Model Selection */}
+                <Card className="shadow-md border-border/60">
+                  <CardHeader className="pb-2 px-6 pt-6">
+                    <CardTitle className="flex items-center gap-2">
+                      <Brain className="w-5 h-5" />
+                      {t.modelCardTitle}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 px-6 pb-6">
+                    <div className="space-y-2">
+                      <Label>{t.modelTypeLabel}</Label>
+                      <Select value={modelType} onValueChange={setModelType}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="wavlm_ft">
+                            {t.modelOptionWavlm}
+                          </SelectItem>
+                          <SelectItem value="baseline">
+                            {t.modelOptionBaseline}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-              {/* Disclaimer */}
-              <div className="text-xs text-muted-foreground p-4 rounded-lg bg-muted/30">
-                <p className="font-medium mb-1">{common.disclaimerTitle}</p>
-                <ul className="list-disc list-inside space-y-1">
-                  {common.disclaimers.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
+                    {modelType === 'baseline' && (
+                      <div className="space-y-2">
+                        <Label>{t.baselineLabel}</Label>
+                        <Select
+                          value={baselineKey}
+                          onValueChange={setBaselineKey}
+                          disabled={baselinesLoading}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={baselinesLoading ? t.baselineLoading : t.baselinePlaceholder} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {baselines.map((b) => (
+                              <SelectItem key={b} value={b}>
+                                {b}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {baselinesError && (
+                          <p className="text-xs text-yellow-500">{baselinesError || t.baselineError}</p>
+                        )}
+                      </div>
+                    )}
+
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      onClick={runPrediction}
+                      disabled={!audioFile || status === 'uploading' || status === 'inferring'}
+                    >
+                      {status === 'uploading' && (
+                        <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t.statusUploading}</>
+                      )}
+                      {status === 'inferring' && (
+                        <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t.statusInferring}</>
+                      )}
+                      {(status === 'idle' || status === 'done' || status === 'error') && (
+                        <><Brain className="w-5 h-5 mr-2" /> {t.predict}</>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Right Panel - Results */}
+              <div className="flex flex-col gap-8 w-full lg:sticky lg:top-28 col-span-1">
+                {/* Status Banner */}
+                {status !== 'idle' && status !== 'done' && (
+                  <Card className={status === 'error' ? 'border-destructive bg-destructive/5' : 'border-primary bg-primary/5'}>
+                    <CardContent className="flex items-center gap-3 p-4">
+                      {status === 'uploading' && (
+                        <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>{t.statusUploadNote}</span></>
+                      )}
+                      {status === 'inferring' && (
+                        <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>{t.statusInferenceNote}</span></>
+                      )}
+                      {status === 'error' && (
+                        <><AlertCircle className="w-5 h-5 text-destructive" /><span className="text-destructive">{predictionError}</span></>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Results */}
+                {predictions && status === 'done' && (
+                  <>
+                    <Card className="shadow-lg border-border/60">
+                      <CardHeader className="px-6 pt-6 pb-3">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                            {t.resultsTitle}
+                          </CardTitle>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {responseLatency && <span>{t.latency}: {responseLatency}ms</span>}
+                            <Button variant="outline" size="sm" onClick={copyShareableLink}>
+                              {copySuccess ? (
+                                <><CheckCircle className="w-4 h-4 mr-2" /> {t.copied}</>
+                              ) : (
+                                <><Share2 className="w-4 h-4 mr-2" /> {t.share}</>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="px-6 pb-6">
+                        {/* Chart */}
+                        <div className="h-64 mb-6">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} layout="vertical">
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis
+                                type="number"
+                                domain={[0, 1]}
+                                tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                                stroke="hsl(var(--muted-foreground))"
+                              />
+                              <YAxis
+                                type="category"
+                                dataKey="trait"
+                                width={30}
+                                stroke="hsl(var(--muted-foreground))"
+                              />
+                              <Tooltip
+                                formatter={(value) => [`${(value * 100).toFixed(1)}%`, 'Score']}
+                                labelFormatter={(label) => chartData.find(d => d.trait === label)?.name || label}
+                                contentStyle={{
+                                  backgroundColor: 'hsl(var(--card))',
+                                  border: '1px solid hsl(var(--border))',
+                                  borderRadius: '8px'
+                                }}
+                              />
+                              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                {chartData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Trait Descriptions */}
+                        <div className="space-y-3">
+                          {Object.entries(predictions).map(([key, value]) => {
+                            const info = traitInfo[key]
+                            if (!info) return null
+                            const Icon = info.icon
+                            return (
+                              <div key={key} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
+                                <div
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                  style={{ backgroundColor: `${info.color}20` }}
+                                >
+                                  <Icon className="w-4 h-4" style={{ color: info.color }} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-medium">{info.name}</span>
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
+                                      {(value * 100).toFixed(0)}%
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    {getTraitDescription(key, value, traitInfo)}
+                                  </p>
+                                  <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full"
+                                      style={{
+                                        width: `${Math.min(Math.max(Number(value) * 100, 0), 100).toFixed(0)}%`,
+                                        background: info.color || '#6b21a8'
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Overall Summary */}
+                        <div className="mt-6 p-4 rounded-lg bg-primary/10 border border-primary/20">
+                          <div className="flex items-start gap-3">
+                            <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-medium mb-1">{t.traitOverallHeading}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {getOverallSummary(predictions, locale)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Technical Details */}
+                    <Collapsible open={technicalOpen} onOpenChange={setTechnicalOpen}>
+                      <Card className="shadow-sm border-border/60">
+                        <CollapsibleTrigger asChild>
+                          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors px-6 pt-6 pb-3">
+                            <CardTitle className="flex items-center justify-between text-base">
+                              <span>{t.technicalDetails}</span>
+                              {technicalOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </CardTitle>
+                          </CardHeader>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <CardContent className="space-y-3 text-sm px-6 pb-6">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-muted-foreground">{t.model}</p>
+                                <p className="font-mono">{modelType === 'wavlm_ft' ? t.modelOptionWavlm : t.modelOptionBaseline}</p>
+                              </div>
+                              {modelType === 'baseline' && (
+                                <div>
+                                  <p className="text-muted-foreground">{t.baselineKey}</p>
+                                  <p className="font-mono">{baselineKey}</p>
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-muted-foreground">{t.latency}</p>
+                                <p className="font-mono">{responseLatency ? `${responseLatency}ms` : 'N/A'}</p>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-2">{t.rawResponse}</p>
+                              <pre className="p-3 rounded-lg bg-muted overflow-auto text-xs max-h-48">
+                                {JSON.stringify(rawResponse, null, 2)}
+                              </pre>
+                            </div>
+                          </CardContent>
+                        </CollapsibleContent>
+                      </Card>
+                    </Collapsible>
+                  </>
+                )}
+
+                {/* Empty State */}
+                {!predictions && status === 'idle' && (
+                  <Card className="border-dashed shadow-sm">
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-3">
+                      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                        <BarChart3 className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="font-semibold">{t.emptyStateTitle}</h3>
+                      <p className="text-sm text-muted-foreground max-w-xs">
+                        {t.emptyStateSubtitle}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Big Five Quick Reference */}
+                <Card className="shadow-sm border-border/60">
+                  <CardHeader className="px-6 pt-6 pb-3">
+                    <CardTitle className="text-base">{t.aboutTitle}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground space-y-2 px-6 pb-6">
+                    {t.aboutItems.map((item) => {
+                      const [abbr, rest] = item.split(' - ')
+                      return (
+                        <p key={item}><strong>{abbr[0]}</strong>{abbr.slice(1)} - {rest}</p>
+                      )
+                    })}
+                  </CardContent>
+                </Card>
+
+                {/* Disclaimer */}
+                <div className="text-xs text-muted-foreground p-4 rounded-lg bg-muted/40 border border-border/60">
+                  <p className="font-medium mb-1">{common.disclaimerTitle}</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {common.disclaimers.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
