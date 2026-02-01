@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -196,7 +196,7 @@ async function getAudioDuration(blob) {
   })
 }
 
-export default function DemoPage() {
+function DemoContent() {
   const searchParams = useSearchParams()
   const { locale, copy } = useLocale()
   const t = copy.demo
@@ -993,5 +993,13 @@ export default function DemoPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function DemoPage() {
+  return (
+    <Suspense fallback={null}>
+      <DemoContent />
+    </Suspense>
   )
 }
