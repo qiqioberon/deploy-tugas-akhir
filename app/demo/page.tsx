@@ -1,6 +1,7 @@
 'use client'
+// @ts-nocheck
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -15,10 +16,8 @@ import {
   CheckCircle,
   Info,
   Share2,
-  Copy,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
   Volume2,
   Clock,
   Trash2,
@@ -57,92 +56,55 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts'
+import { useLocale } from '@/components/locale-provider'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { LanguageToggle } from '@/components/ui/language-toggle'
+import { traitText, summaryText } from '@/lib/translations'
+import { listBaselines, predictBaseline, predictFineTune, type Traits } from '@/lib/gradio'
 
-const GRADIO_BASE_URL = process.env.NEXT_PUBLIC_GRADIO_BASE_URL || 'https://qiqioberon-personality-with-audio-demo.hf.space'
 const TARGET_DURATION = 15
 const SAMPLE_RATE = 16000
 
-const traitInfo = {
-  openness: {
-    name: 'Openness',
-    short: 'O',
-    icon: Lightbulb,
-    color: '#a855f7',
-    descriptions: {
-      low: 'You tend to prefer routine and familiar experiences. Practical and grounded.',
-      medium: 'You balance curiosity with practicality. Open to new ideas when relevant.',
-      high: 'You embrace novelty and creativity. Imaginative and intellectually curious.'
-    }
-  },
-  conscientiousness: {
-    name: 'Conscientiousness',
-    short: 'C',
-    icon: Target,
-    color: '#3b82f6',
-    descriptions: {
-      low: 'You prefer flexibility over strict planning. Spontaneous and adaptable.',
-      medium: 'You balance organization with flexibility. Reliable when it matters.',
-      high: 'You are highly organized and disciplined. Goal-oriented and dependable.'
-    }
-  },
-  extraversion: {
-    name: 'Extraversion',
-    short: 'E',
-    icon: Users,
-    color: '#f97316',
-    descriptions: {
-      low: 'You recharge through solitude. Thoughtful and introspective.',
-      medium: 'You enjoy social time but also value quiet moments. Balanced energy.',
-      high: 'You thrive in social settings. Energetic and outgoing.'
-    }
-  },
-  agreeableness: {
-    name: 'Agreeableness',
-    short: 'A',
-    icon: Heart,
-    color: '#22c55e',
-    descriptions: {
-      low: 'You prioritize directness over diplomacy. Independent minded.',
-      medium: 'You balance cooperation with self-advocacy. Diplomatic when needed.',
-      high: 'You value harmony and cooperation. Empathetic and considerate.'
-    }
-  },
-  neuroticism: {
-    name: 'Neuroticism',
-    short: 'N',
-    icon: Zap,
-    color: '#ef4444',
-    descriptions: {
-      low: 'You stay calm under pressure. Emotionally stable and resilient.',
-      medium: 'You experience normal emotional fluctuations. Generally balanced.',
-      high: 'You are emotionally sensitive. May experience stress more intensely.'
-    }
-  }
+const traitMeta = {
+  openness: { icon: Lightbulb, color: '#a855f7' },
+  conscientiousness: { icon: Target, color: '#3b82f6' },
+  extraversion: { icon: Users, color: '#f97316' },
+  agreeableness: { icon: Heart, color: '#22c55e' },
+  neuroticism: { icon: Zap, color: '#ef4444' }
 }
 
-const getTraitDescription = (trait, value) => {
-  const info = traitInfo[trait]
-  if (!info) return ''
-  if (value < 0.35) return info.descriptions.low
-  if (value < 0.65) return info.descriptions.medium
-  return info.descriptions.high
+const buildTraitInfo = (locale) => {
+  const text = traitText[locale] || traitText.en
+  return Object.keys(traitMeta).reduce((acc, key) => {
+    acc[key] = { ...traitMeta[key], ...text[key] }
+    return acc
+  }, {})
 }
 
-const getOverallSummary = (predictions) => {
+const getTraitDescription = (trait, value, info) => {
+  const data = info[trait]
+  if (!data) return ''
+  if (value < 0.35) return data.descriptions.low
+  if (value < 0.65) return data.descriptions.medium
+  return data.descriptions.high
+}
+
+const getOverallSummary = (predictions, locale) => {
   if (!predictions) return ''
-
+  const labels = traitText[locale] || traitText.en
+  const summary = summaryText[locale] || summaryText.en
   const traits = []
-  if (predictions.openness > 0.6) traits.push('creative and open-minded')
-  if (predictions.conscientiousness > 0.6) traits.push('organized and disciplined')
-  if (predictions.extraversion > 0.6) traits.push('socially energetic')
-  if (predictions.agreeableness > 0.6) traits.push('empathetic and cooperative')
-  if (predictions.neuroticism > 0.6) traits.push('emotionally sensitive')
-
+  if (predictions.openness > 0.6) traits.push(labels.openness.summaryLabel)
+  if (predictions.conscientiousness > 0.6) traits.push(labels.conscientiousness.summaryLabel)
+  if (predictions.extraversion > 0.6) traits.push(labels.extraversion.summaryLabel)
+  if (predictions.agreeableness > 0.6) traits.push(labels.agreeableness.summaryLabel)
+  if (predictions.neuroticism > 0.6) traits.push(labels.neuroticism.summaryLabel)
+  
   if (traits.length === 0) {
-    return 'Your voice suggests a balanced personality profile with no extreme tendencies in any dimension.'
+    return summary.balanced
   }
-
-  return `Based on your voice, you appear to be ${traits.join(', ')}. Remember, this is just an experimental prediction.`
+  
+  return `${summary.intro}${traits.join(', ')}${summary.outro}`
 }
 
 function audioBufferToWav(buffer) {
@@ -235,9 +197,14 @@ async function getAudioDuration(blob) {
 
 export default function DemoPage() {
   const searchParams = useSearchParams()
+  const { locale, copy } = useLocale()
+  const t = copy.demo
+  const common = copy.common
+  const traitInfo = useMemo(() => buildTraitInfo(locale), [locale])
 
   // Audio state
   const [audioBlob, setAudioBlob] = useState(null)
+  const [audioFile, setAudioFile] = useState(null)
   const [audioUrl, setAudioUrl] = useState(null)
   const [audioDuration, setAudioDuration] = useState(0)
   const [isRecording, setIsRecording] = useState(false)
@@ -326,28 +293,14 @@ export default function DemoPage() {
     setBaselinesLoading(true)
     setBaselinesError(null)
     try {
-      const response = await fetch(`${GRADIO_BASE_URL}/api/predict/list_baselines`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: [] })
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data = await response.json()
-      // Gradio returns { data: [...] }
-      const baselineList = data.data?.[0] || data.data || []
-      setBaselines(Array.isArray(baselineList) ? baselineList : [])
-      if (baselineList.length > 0) {
-        setBaselineKey(baselineList[0])
+      const list = await listBaselines()
+      setBaselines(Array.isArray(list) ? list : [])
+      if (list.length > 0) {
+        setBaselineKey(list[0])
       }
     } catch (error) {
       console.error('Failed to fetch baselines:', error)
-      setBaselinesError('Could not load baseline models. Using defaults.')
-      setBaselines(['egemaps', 'wav2vec2', 'hubert', 'wavlm'])
-      setBaselineKey('egemaps')
+      setBaselinesError(error?.message || t.baselineError)
     } finally {
       setBaselinesLoading(false)
     }
@@ -398,7 +351,7 @@ export default function DemoPage() {
       }, 100)
     } catch (error) {
       console.error('Recording error:', error)
-      setAudioError('Could not access microphone. Please grant permission.')
+      setAudioError(t.errors.microphone)
     }
   }
 
@@ -417,9 +370,9 @@ export default function DemoPage() {
   const processAudio = async (blob) => {
     try {
       const duration = await getAudioDuration(blob)
-
+      
       if (duration < TARGET_DURATION - 0.5) {
-        setAudioError(`Audio is ${duration.toFixed(1)}s. Please record exactly 15 seconds.`)
+        setAudioError(t.errors.duration(duration.toFixed(1)))
         return
       }
 
@@ -434,6 +387,9 @@ export default function DemoPage() {
 
       const url = URL.createObjectURL(finalBlob)
       setAudioBlob(finalBlob)
+      const fileName = `audio.${(finalBlob.type?.split('/')?.[1] || 'wav')}`
+      const file = new File([finalBlob], fileName, { type: finalBlob.type || 'audio/wav' })
+      setAudioFile(file)
       setAudioUrl(url)
       setAudioDuration(finalDuration)
       setAudioError(null)
@@ -441,18 +397,18 @@ export default function DemoPage() {
       setStatus('idle')
     } catch (error) {
       console.error('Audio processing error:', error)
-      setAudioError('Failed to process audio. Please try again.')
+      setAudioError(t.errors.processing)
     }
   }
 
   const handleSelectedFile = async (file) => {
     if (!file) return
-    if (audioBlob) {
-      setAudioError('Hapus audio yang ada sebelum mengunggah yang baru.')
+    if (audioFile) {
+      setAudioError(t.errors.existingAudio)
       return
     }
     if (!file.type.startsWith('audio/')) {
-      setAudioError('Please upload an audio file.')
+      setAudioError(t.errors.fileType)
       return
     }
     await processAudio(file)
@@ -477,7 +433,7 @@ export default function DemoPage() {
   const handleDragOver = (e) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!audioBlob) {
+    if (!audioFile) {
       setIsDragActive(true)
     }
   }
@@ -504,6 +460,7 @@ export default function DemoPage() {
       URL.revokeObjectURL(audioUrl)
     }
     setAudioBlob(null)
+    setAudioFile(null)
     setAudioUrl(null)
     setAudioDuration(0)
     setPredictions(null)
@@ -512,8 +469,8 @@ export default function DemoPage() {
   }
 
   const runPrediction = async () => {
-    if (!audioBlob) {
-      setAudioError('Please record or upload audio first.')
+    if (!audioFile) {
+      setAudioError(t.errors.missingAudio)
       return
     }
 
@@ -522,85 +479,19 @@ export default function DemoPage() {
     const startTime = Date.now()
 
     try {
-      const formData = new FormData()
-      formData.append('files', audioBlob, 'audio.wav')
-
-      // First upload the file
-      const uploadResponse = await fetch(`${GRADIO_BASE_URL}/upload`, {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: HTTP ${uploadResponse.status}`)
-      }
-
-      const uploadData = await uploadResponse.json()
-      const filePath = uploadData[0] || uploadData.path || uploadData
-
       setStatus('inferring')
+      const traits = modelType === 'wavlm_ft'
+        ? await predictFineTune(audioFile)
+        : await predictBaseline(baselineKey, audioFile)
 
-      // Choose endpoint based on model type
-      let endpoint, requestBody
-
-      if (modelType === 'wavlm_ft') {
-        endpoint = `${GRADIO_BASE_URL}/api/predict/predict_wavlm_ft`
-        requestBody = {
-          data: [{ path: filePath, meta: { _type: 'gradio.FileData' } }]
-        }
-      } else {
-        endpoint = `${GRADIO_BASE_URL}/api/predict/predict_baseline_ridge_audio`
-        requestBody = {
-          data: [
-            baselineKey,
-            { path: filePath, meta: { _type: 'gradio.FileData' } }
-          ]
-        }
-      }
-
-      const predictResponse = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      })
-
-      if (!predictResponse.ok) {
-        const errorText = await predictResponse.text()
-        throw new Error(`Prediction failed: ${errorText}`)
-      }
-
-      const predictData = await predictResponse.json()
       const latency = Date.now() - startTime
-
-      setRawResponse(predictData)
       setResponseLatency(latency)
-
-      // Parse predictions from Gradio response
-      // Expected format: { data: [{ openness: 0.5, ... }] } or { data: [[0.5, 0.6, ...]] }
-      const result = predictData.data?.[0]
-
-      let parsed
-      if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
-        // Object format
-        parsed = result
-      } else if (Array.isArray(result)) {
-        // Array format - assume order: O, C, E, A, N
-        parsed = {
-          openness: result[0],
-          conscientiousness: result[1],
-          extraversion: result[2],
-          agreeableness: result[3],
-          neuroticism: result[4]
-        }
-      } else {
-        throw new Error('Unexpected response format')
-      }
-
-      setPredictions(parsed)
+      setRawResponse(traits)
+      setPredictions(traits)
       setStatus('done')
     } catch (error) {
       console.error('Prediction error:', error)
-      setPredictionError(error.message || 'Prediction failed. Please try again.')
+      setPredictionError(error.message || t.errors.prediction)
       setStatus('error')
     }
   }
@@ -645,14 +536,18 @@ export default function DemoPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
               <Brain className="w-5 h-5 text-white" />
             </div>
-            <span className="font-semibold text-lg">TA Personality</span>
+            <span className="font-semibold text-lg">{common.brand}</span>
           </Link>
-          <Link href="/">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Home
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <LanguageToggle />
+            <ThemeToggle />
+            <Link href="/">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                {common.backHome}
+              </Button>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -660,14 +555,14 @@ export default function DemoPage() {
         <div className="max-w-6xl mx-auto">
           {/* Title */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">Voice Personality Analysis</h1>
-            <p className="text-muted-foreground">Record or upload 15 seconds of audio to analyze your Big Five traits.</p>
+            <h1 className="text-3xl font-bold mb-2">{t.title}</h1>
+            <p className="text-muted-foreground">{t.subtitle}</p>
           </div>
 
           {/* Privacy Note */}
           <div className="flex items-center gap-2 justify-center mb-8 text-sm text-muted-foreground">
             <Shield className="w-4 h-4" />
-            <span>Your audio is used only to compute predictions. Avoid uploading sensitive data.</span>
+            <span>{t.privacy}</span>
           </div>
 
           <div className="grid lg:grid-cols-2 gap-8">
@@ -677,9 +572,9 @@ export default function DemoPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Mic className="w-5 h-5" />
-                    Audio Input
+                    {t.audioCardTitle}
                   </CardTitle>
-                  <CardDescription>Record or upload exactly 15 seconds of your voice.</CardDescription>
+                  <CardDescription>{t.audioCardDesc}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Recording Controls */}
@@ -693,12 +588,12 @@ export default function DemoPage() {
                         </div>
                         <div>
                           <p className="text-2xl font-mono font-bold">{recordingTime.toFixed(1)}s</p>
-                          <p className="text-sm text-muted-foreground">Recording...</p>
+                          <p className="text-sm text-muted-foreground">{t.recordingLabel}</p>
                         </div>
                         <Progress value={(recordingTime / TARGET_DURATION) * 100} className="h-2" />
                         <Button variant="destructive" onClick={stopRecording}>
                           <Square className="w-4 h-4 mr-2" />
-                          Stop Recording
+                          {t.stopRecording}
                         </Button>
                       </div>
                     ) : (
@@ -706,7 +601,7 @@ export default function DemoPage() {
 
                         <div
                           className={`relative flex-1 rounded-lg border-2 border-dashed transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/60'
-                            } ${audioBlob ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                            } ${audioFile ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                           onDragOver={handleDragOver}
                           onDragEnter={handleDragOver}
                           onDragLeave={handleDragLeave}
@@ -718,22 +613,22 @@ export default function DemoPage() {
                             onChange={handleFileUpload}
                             ref={fileInputRef}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            disabled={!!audioBlob}
+                            disabled={!!audioFile}
                           />
                           <div className="flex flex-col items-center justify-center gap-2 py-4 px-3 text-center pointer-events-none">
                             <Upload className="w-5 h-5 text-muted-foreground" />
-                            <div className="text-sm font-medium">Drag & drop audio</div>
-                            <div className="text-xs text-muted-foreground">atau klik untuk pilih file</div>
+                            <div className="text-sm font-medium">{t.dragDropTitle}</div>
+                            <div className="text-xs text-muted-foreground">{t.dragDropSubtitle}</div>
                           </div>
                         </div>
                         <Button
                           size="lg"
                           onClick={startRecording}
-                          disabled={!!audioBlob}
+                          disabled={!!audioFile}
                           className="flex-1 p-4"
                         >
                           <Mic className="w-5 h-5 " />
-                          Record Audio
+                          {t.recordButton}
                         </Button>
                       </div>
                     )}
@@ -742,7 +637,7 @@ export default function DemoPage() {
                   {/* Duration requirement */}
                   <div className="flex items-center gap-2 justify-center text-sm text-muted-foreground">
                     <Clock className="w-4 h-4" />
-                    <span>Exactly 15 seconds required</span>
+                    <span>{t.durationRequirement}</span>
                   </div>
 
                   {/* Error message */}
@@ -759,7 +654,7 @@ export default function DemoPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Volume2 className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">Audio Ready</span>
+                          <span className="text-sm font-medium">{t.audioReady}</span>
                           <span className="text-xs text-muted-foreground">({audioDuration.toFixed(1)}s)</span>
                         </div>
                         <Button variant="ghost" size="sm" onClick={clearAudio}>
@@ -779,9 +674,9 @@ export default function DemoPage() {
                         className="w-full"
                       >
                         {isPlaying ? (
-                          <><Pause className="w-4 h-4 mr-2" /> Pause</>
+                          <><Pause className="w-4 h-4 mr-2" /> {t.pause}</>
                         ) : (
-                          <><Play className="w-4 h-4 mr-2" /> Play Audio</>
+                          <><Play className="w-4 h-4 mr-2" /> {t.play}</>
                         )}
                       </Button>
                     </div>
@@ -794,22 +689,22 @@ export default function DemoPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Brain className="w-5 h-5" />
-                    Model Selection
+                    {t.modelCardTitle}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Model Type</Label>
+                    <Label>{t.modelTypeLabel}</Label>
                     <Select value={modelType} onValueChange={setModelType}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="wavlm_ft">
-                          Fine-tuned WavLM (Recommended)
+                          {t.modelOptionWavlm}
                         </SelectItem>
                         <SelectItem value="baseline">
-                          Baseline Ridge Model
+                          {t.modelOptionBaseline}
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -817,14 +712,14 @@ export default function DemoPage() {
 
                   {modelType === 'baseline' && (
                     <div className="space-y-2">
-                      <Label>Baseline Embedding</Label>
+                      <Label>{t.baselineLabel}</Label>
                       <Select
                         value={baselineKey}
                         onValueChange={setBaselineKey}
                         disabled={baselinesLoading}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder={baselinesLoading ? 'Loading...' : 'Select baseline'} />
+                          <SelectValue placeholder={baselinesLoading ? t.baselineLoading : t.baselinePlaceholder} />
                         </SelectTrigger>
                         <SelectContent>
                           {baselines.map((b) => (
@@ -835,7 +730,7 @@ export default function DemoPage() {
                         </SelectContent>
                       </Select>
                       {baselinesError && (
-                        <p className="text-xs text-yellow-500">{baselinesError}</p>
+                        <p className="text-xs text-yellow-500">{baselinesError || t.baselineError}</p>
                       )}
                     </div>
                   )}
@@ -844,16 +739,16 @@ export default function DemoPage() {
                     className="w-full"
                     size="lg"
                     onClick={runPrediction}
-                    disabled={!audioBlob || status === 'uploading' || status === 'inferring'}
+                    disabled={!audioFile || status === 'uploading' || status === 'inferring'}
                   >
                     {status === 'uploading' && (
-                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Uploading audio...</>
+                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t.statusUploading}</>
                     )}
                     {status === 'inferring' && (
-                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Running inference...</>
+                      <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t.statusInferring}</>
                     )}
                     {(status === 'idle' || status === 'done' || status === 'error') && (
-                      <><Brain className="w-5 h-5 mr-2" /> Predict Personality</>
+                      <><Brain className="w-5 h-5 mr-2" /> {t.predict}</>
                     )}
                   </Button>
                 </CardContent>
@@ -867,10 +762,10 @@ export default function DemoPage() {
                 <Card className={status === 'error' ? 'border-destructive' : 'border-primary'}>
                   <CardContent className="flex items-center gap-3 p-4">
                     {status === 'uploading' && (
-                      <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>Uploading audio...</span></>
+                      <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>{t.statusUploadNote}</span></>
                     )}
                     {status === 'inferring' && (
-                      <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>Running inference... This may take a moment.</span></>
+                      <><Loader2 className="w-5 h-5 animate-spin text-primary" /><span>{t.statusInferenceNote}</span></>
                     )}
                     {status === 'error' && (
                       <><AlertCircle className="w-5 h-5 text-destructive" /><span className="text-destructive">{predictionError}</span></>
@@ -887,13 +782,13 @@ export default function DemoPage() {
                       <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center gap-2">
                           <CheckCircle className="w-5 h-5 text-green-500" />
-                          Your Results
+                          {t.resultsTitle}
                         </CardTitle>
                         <Button variant="outline" size="sm" onClick={copyShareableLink}>
                           {copySuccess ? (
-                            <><CheckCircle className="w-4 h-4 mr-2" /> Copied!</>
+                            <><CheckCircle className="w-4 h-4 mr-2" /> {t.copied}</>
                           ) : (
-                            <><Share2 className="w-4 h-4 mr-2" /> Share</>
+                            <><Share2 className="w-4 h-4 mr-2" /> {t.share}</>
                           )}
                         </Button>
                       </div>
@@ -956,7 +851,7 @@ export default function DemoPage() {
                                   </span>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
-                                  {getTraitDescription(key, value)}
+                                  {getTraitDescription(key, value, traitInfo)}
                                 </p>
                               </div>
                             </div>
@@ -969,9 +864,9 @@ export default function DemoPage() {
                         <div className="flex items-start gap-3">
                           <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                           <div>
-                            <p className="font-medium mb-1">What this means overall</p>
+                            <p className="font-medium mb-1">{t.traitOverallHeading}</p>
                             <p className="text-sm text-muted-foreground">
-                              {getOverallSummary(predictions)}
+                              {getOverallSummary(predictions, locale)}
                             </p>
                           </div>
                         </div>
@@ -985,7 +880,7 @@ export default function DemoPage() {
                       <CollapsibleTrigger asChild>
                         <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors">
                           <CardTitle className="flex items-center justify-between text-base">
-                            <span>Technical Details</span>
+                            <span>{t.technicalDetails}</span>
                             {technicalOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </CardTitle>
                         </CardHeader>
@@ -994,22 +889,22 @@ export default function DemoPage() {
                         <CardContent className="space-y-3 text-sm">
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <p className="text-muted-foreground">Model</p>
-                              <p className="font-mono">{modelType === 'wavlm_ft' ? 'Fine-tuned WavLM' : 'Baseline Ridge'}</p>
+                              <p className="text-muted-foreground">{t.model}</p>
+                              <p className="font-mono">{modelType === 'wavlm_ft' ? t.modelOptionWavlm : t.modelOptionBaseline}</p>
                             </div>
                             {modelType === 'baseline' && (
                               <div>
-                                <p className="text-muted-foreground">Baseline Key</p>
+                                <p className="text-muted-foreground">{t.baselineKey}</p>
                                 <p className="font-mono">{baselineKey}</p>
                               </div>
                             )}
                             <div>
-                              <p className="text-muted-foreground">Latency</p>
+                              <p className="text-muted-foreground">{t.latency}</p>
                               <p className="font-mono">{responseLatency ? `${responseLatency}ms` : 'N/A'}</p>
                             </div>
                           </div>
                           <div>
-                            <p className="text-muted-foreground mb-2">Raw Response</p>
+                            <p className="text-muted-foreground mb-2">{t.rawResponse}</p>
                             <pre className="p-3 rounded-lg bg-muted overflow-auto text-xs max-h-48">
                               {JSON.stringify(rawResponse, null, 2)}
                             </pre>
@@ -1028,9 +923,9 @@ export default function DemoPage() {
                     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
                       <BarChart3 className="w-8 h-8 text-muted-foreground" />
                     </div>
-                    <h3 className="font-semibold mb-2">No Results Yet</h3>
+                    <h3 className="font-semibold mb-2">{t.emptyStateTitle}</h3>
                     <p className="text-sm text-muted-foreground max-w-xs">
-                      Record or upload 15 seconds of audio, then click "Predict Personality" to see your results.
+                      {t.emptyStateSubtitle}
                     </p>
                   </CardContent>
                 </Card>
@@ -1039,24 +934,25 @@ export default function DemoPage() {
               {/* Big Five Quick Reference */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">About Big Five (OCEAN)</CardTitle>
+                  <CardTitle className="text-base">{t.aboutTitle}</CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground space-y-2">
-                  <p><strong>O</strong>penness - Curiosity, imagination, preference for novelty.</p>
-                  <p><strong>C</strong>onscientiousness - Organization, discipline, goal-directed behavior.</p>
-                  <p><strong>E</strong>xtraversion - Social energy, assertiveness, talkativeness.</p>
-                  <p><strong>A</strong>greeableness - Empathy, cooperation, kindness.</p>
-                  <p><strong>N</strong>euroticism - Emotional sensitivity, tendency toward stress.</p>
+                  {t.aboutItems.map((item) => {
+                    const [abbr, rest] = item.split(' - ')
+                    return (
+                      <p key={item}><strong>{abbr[0]}</strong>{abbr.slice(1)} - {rest}</p>
+                    )
+                  })}
                 </CardContent>
               </Card>
 
               {/* Disclaimer */}
               <div className="text-xs text-muted-foreground p-4 rounded-lg bg-muted/30">
-                <p className="font-medium mb-1">Disclaimers:</p>
+                <p className="font-medium mb-1">{common.disclaimerTitle}</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>This is an experimental academic demo.</li>
-                  <li>Predictions are probabilistic and may be inaccurate.</li>
-                  <li>Not for medical/clinical decisions.</li>
+                  {common.disclaimers.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
                 </ul>
               </div>
             </div>

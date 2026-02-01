@@ -1,5 +1,5 @@
 import './globals.css'
-import { ThemeProvider } from 'next-themes'
+import Providers from './providers'
 
 export const metadata = {
   title: 'TA Personality Demo - Big Five Voice Analysis',
@@ -10,9 +10,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+        <Providers>
           {children}
-        </ThemeProvider>
+        </Providers>
       </body>
     </html>
   )
